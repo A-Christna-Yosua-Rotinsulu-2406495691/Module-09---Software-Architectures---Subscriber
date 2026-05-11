@@ -44,3 +44,15 @@ Dalam fungsi `main()`, terdapat string URL `"amqp://guest:guest@localhost:5672"`
    Ini adalah nomor **port** di mana RabbitMQ menunggu (listen) koneksi masuk untuk jalur komunikasi AMQP. Secara *default*, RabbitMQ mendengarkan port TCP 5672.
 
 Jadi, jika diartikan dalam bahasa manusia, baris tersebut memberi instruksi: *"Tolong hubungkan aplikasi saya melalui protokol **AMQP** ke server yang berjalan di **localhost** pada port **5672**, lalu *login* dengan username **guest** dan password **guest**."*
+
+## C. Simulation Slow Subscriber
+
+![Console Connection Sleep](assets/images/ConsoleConnectionSleep.png)
+![RabbitMQ Connection Sleep](assets/images/RabbitMQ-ConnectionSleep.png)
+
+You will see something like this. It means the producer can just keep sending requests, and those requests (as an event) are put on a queue message. Slowly the consumer will process it one by one.
+
+### Why is the total number of queue messages 20?
+Berdasarkan observasi saya, jumlah pesan di antrean mencapai 20 karena program **publisher dijalankan sebanyak 4 kali**. Setiap satu kali pemanggilan program publisher, ia akan mengirimkan 5 pesan (event) ke RabbitMQ. Dengan menjalankan publisher 4 kali secara berurutan, maka total ada $5 \times 4 = 20$ pesan yang masuk ke antrean.
+
+Karena program **subscriber sengaja dibuat lambat** dengan adanya perintah `thread::sleep(ten_millis)` (durasi 1 detik) di dalam *handler*-nya, subscriber tidak dapat mengonsumsi pesan secepat publisher mengirimkannya. Akibatnya, pesan-pesan tersebut menumpuk di dalam antrean (queue) RabbitMQ hingga mencapai angka 20 (atau lebih, tergantung berapa kali kita menjalankan publisher sebelum subscriber menghabiskannya).
