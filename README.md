@@ -56,3 +56,30 @@ You will see something like this. It means the producer can just keep sending re
 Berdasarkan observasi saya, jumlah pesan di antrean mencapai 20 karena program **publisher dijalankan sebanyak 4 kali**. Setiap satu kali pemanggilan program publisher, ia akan mengirimkan 5 pesan (event) ke RabbitMQ. Dengan menjalankan publisher 4 kali secara berurutan, maka total ada $5 \times 4 = 20$ pesan yang masuk ke antrean.
 
 Karena program **subscriber sengaja dibuat lambat** dengan adanya perintah `thread::sleep(ten_millis)` (durasi 1 detik) di dalam *handler*-nya, subscriber tidak dapat mengonsumsi pesan secepat publisher mengirimkannya. Akibatnya, pesan-pesan tersebut menumpuk di dalam antrean (queue) RabbitMQ hingga mencapai angka 20 (atau lebih, tergantung berapa kali kita menjalankan publisher sebelum subscriber menghabiskannya).
+
+## D. Simulation Spike Reduce
+
+![Console Spike Reduce](assets/images/ConsoleSpikeReduce.png)
+![RabbitMQ Spike Reduce](assets/images/RabbitMQ-SpikeReduce.png)
+
+### Refleksi/Jawaban
+Pola ini menunjukkan bagaimana *message broker* (RabbitMQ) berfungsi sebagai **buffer** untuk menangani **spike** (lonjakan pesan tiba-tiba). Meskipun publisher mengirimkan banyak pesan dalam waktu yang sangat singkat (seperti terlihat pada gambar konsol di mana publisher selesai jauh sebelum subscriber), RabbitMQ menampung semua pesan tersebut di dalam antrean. 
+
+Subscriber kemudian memproses pesan-pesan tersebut secara stabil satu per satu (karena ada *delay* buatan). Hal ini mencegah subscriber menjadi *overloaded* atau *crash* akibat lonjakan beban mendadak. Inilah yang disebut sebagai strategi **Load Leveling** atau **Spike Arresting**.
+
+### Apa yang bisa ditingkatkan? (Improvements)
+
+Berdasarkan kode yang ada sekarang, beberapa hal yang dapat ditingkatkan antara lain:
+
+1. **Error Handling pada Publisher & Subscriber**:
+   - Di `publisher`, pemanggilan `publish_event` menggunakan `_ =` yang berarti mengabaikan hasil (Result). Sebaiknya ada pengecekan apakah pesan berhasil terkirim ke broker atau tidak.
+   - Di `subscriber`, jika proses pengolahan pesan gagal, kita bisa menambahkan logika *retry* atau memindahkan pesan ke *Dead Letter Exchange* (DLX) untuk dianalisis lebih lanjut.
+
+2. **Concurrency pada Subscriber**:
+   - Saat ini subscriber memproses pesan satu per satu secara sekuensial. Jika volume pesan sangat besar, kita bisa meningkatkan performa dengan menjalankan beberapa *worker threads* untuk memproses pesan secara paralel, namun tetap dengan batas tertentu (*rate limiting*) agar tidak membebani sistem.
+
+3. **Menghindari Busy Loop**:
+   - Di `main.rs` subscriber, terdapat `loop {}` yang kosong. Ini adalah *busy-wait* yang mengonsumsi CPU secara sia-sia. Sebaiknya gunakan mekanisme sinkronisasi yang lebih baik atau biarkan main thread menunggu sinyal berhenti secara elegan.
+
+4. **Konfigurasi Eksternal**:
+   - URL koneksi `"amqp://guest:guest@localhost:5672"` saat ini di-*hardcode*. Sebaiknya dipindahkan ke variabel lingkungan (*environment variables*) atau file konfigurasi agar lebih fleksibel saat *deployment*.
